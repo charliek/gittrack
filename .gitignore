@@ -1,0 +1,13 @@
+target/
+logs/
+*.class
+*.iml
+*.ipr
+*.iws
+.idea/
+.gradle/
+out/
+build/
+*.orig
+.DS_Store
+src/main/resources/dev_config.yml
