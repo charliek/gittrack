@@ -5,10 +5,15 @@ buildscript {
         maven {
             url 'http://repo.jfrog.org/artifactory/gradle-plugins'
         }
+        ivy {
+            url "http://dl.bintray.com/content/johnrengelman/gradle-plugins"
+            layout "maven"
+        }
     }
     dependencies {
         classpath "net.saliman:gradle-cobertura-plugin:1.1.0"
         classpath 'org.jfrog.buildinfo:build-info-extractor-gradle:2.0.16'
+        classpath 'org.gradle.plugins:shadow:0.6'
     }
 }
 
@@ -21,11 +26,12 @@ task wrapper(type: Wrapper) {
 apply plugin: 'cobertura'
 apply plugin: 'codenarc'
 apply plugin: 'groovy'
-apply plugin: 'idea'
 apply plugin: 'maven'
 
 group 'com.github.charliek'
 version = "$currentVersion"
+
+apply plugin: 'shadow'
 
 // Run code narc before the test phase begins
 test.dependsOn codenarcMain
@@ -57,10 +63,19 @@ dependencies {
     testCompile "org.hamcrest:hamcrest-core:1.3" // only necessary if Hamcrest matchers are used
     testRuntime "cglib:cglib-nodep:2.2.2"          // allows mocking of classes (in addition to interfaces)
     testRuntime "org.objenesis:objenesis:1.2"    // allows mocking of classes without default constructor (together with CGLIB)
+}
 
-    // needed for validation tests so logging in hibernate validator does not throw exception
-    testCompile 'ch.qos.logback:logback-classic:1.0.7'
-    testCompile "org.slf4j:log4j-over-slf4j:1.7.2"
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.github.charliek.gittrack.GittrackServer'
+        attributes 'Built-Date': new Date() //now
+        attributes 'Built-By': System.getProperty('user.name')
+        attributes 'Build-Jdk': System.getProperty('java.version')
+        attributes 'Implementation-Title': project.name
+        attributes 'Implementation-Version': project.version
+        attributes 'Implementation-Vendor-Id': project.group
+    }
 }
 
 cobertura {
@@ -70,4 +85,33 @@ cobertura {
 codenarc {
     configFile = rootProject.file('conf/codenarc/rules.groovy')
     reportFormat = System.properties['codeNarcOutput'] ?: 'html'
+}
+
+shadow {
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+}
+
+task run(dependsOn: 'shadow', description: "Run service using dev configuration") << {
+    // Grab any dw. properties that are specified on the command line and pass to the Java process (i.e. dw.http.port=8080)
+    def props = project.ext.properties.findAll { it.key.startsWith('dw') }
+    javaexec {
+        main = '-jar'
+        args = ["${shadow.shadowJar.getPath()}", 'server', 'src/main/resources/dev_config.yml']
+        systemProperties = props
+    }
+}
+
+task migrate(dependsOn: 'shadow', description: "Run migrations using the dev configuration") << {
+    javaexec {
+        main = '-jar'
+        args = ["${shadow.shadowJar.getPath()}", 'db', 'migrate', 'src/main/resources/dev_config.yml']
+    }
+}
+
+task dropAll(dependsOn: 'shadow', description: "Run drop-all database command") << {
+    javaexec {
+        main = '-jar'
+        args = ["${shadow.shadowJar.getPath()}", 'db', 'drop-all', 'src/main/resources/dev_config.yml', '--confirm-delete-everything']
+    }
 }
